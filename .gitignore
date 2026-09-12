@@ -4,6 +4,8 @@ data/manuals/*
 data/indexes/*
 !data/indexes/.gitkeep
 data/kotaemon/
+data/model-cache/
+data/backups/
 
 # Environment and secrets
 .env

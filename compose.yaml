@@ -16,6 +16,10 @@ services:
     volumes:
       - ./data/kotaemon:/app/ktem_app_data
       - ./data/manuals:/app/manuals:ro
+      - ./scripts:/app/project-scripts:ro
+      - ./data/model-cache/huggingface:/root/.cache/huggingface
+      - ./data/model-cache/easyocr:/root/.EasyOCR
+      - ./data/model-cache/docling:/app/ktem_app_data/huggingface
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/', timeout=5)"]

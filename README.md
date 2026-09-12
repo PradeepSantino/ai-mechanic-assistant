@@ -34,10 +34,21 @@ make up
 
 Open <http://127.0.0.1:7860>. The initial Kotaemon login is `admin` / `admin`.
 
-In Kotaemon, open **Settings → Retrieval Settings → File loader**, select
-**Docling (figure+table extraction)**, save, and upload a manual. Local data is
-persisted under `data/kotaemon`; source manuals can be placed under
-`data/manuals` and are never committed.
+PDF quick uploads are forced through **Docling** with layout and table parsing.
+OCR is disabled for this demo corpus because all 517 RAV4 PDFs already contain
+embedded text. Local data is persisted under `data/kotaemon`; source manuals can
+be placed under `data/manuals` and are never committed.
+
+To prepare a local folder of manuals and index any files not already complete:
+
+```bash
+python3 scripts/prepare_manuals.py "/path/to/manual folder" data/manuals
+docker compose exec -T app \
+  /app/.venv/bin/python /app/project-scripts/index_manuals.py
+```
+
+The indexer processes one file at a time, reports each result, and continues
+past individual failures. Original source PDFs are not modified.
 
 Useful commands:
 
@@ -49,4 +60,6 @@ make down
 ```
 
 The image is pinned by digest for reproducible setup and extended with
-Kotaemon's optional Docling dependency.
+Kotaemon's optional Docling dependency. OpenAI `text-embedding-3-small` is the
+default embedding model. Answers can cite the source PDF and page number; exact
+cropped visual excerpts are a separate UI feature still to be implemented.
