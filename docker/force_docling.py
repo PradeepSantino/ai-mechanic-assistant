@@ -5,6 +5,8 @@ pipeline_path = Path("/app/libs/ktem/ktem/index/file/pipelines.py")
 ui_path = Path("/app/libs/ktem/ktem/index/file/ui.py")
 ingest_path = Path("/app/libs/kotaemon/kotaemon/indices/ingests/files.py")
 docling_loader_path = Path("/app/libs/kotaemon/kotaemon/loaders/docling_loader.py")
+pdf_viewer_path = Path("/app/libs/ktem/ktem/assets/js/pdf_viewer.js")
+app_path = Path("/app/libs/ktem/ktem/app.py")
 
 pipeline_source = pipeline_path.read_text()
 old_param = 'reader_mode: str = Param("default", help="The reader mode")'
@@ -73,3 +75,45 @@ new_converter = '''        try:
 if docling_source.count(old_converter) != 1:
     raise RuntimeError("Unexpected Kotaemon Docling converter declaration")
 docling_loader_path.write_text(docling_source.replace(old_converter, new_converter))
+
+# Kotaemon 0.0.1 imports pdfjs-viewer-element from Skypack at runtime. That CDN
+# build currently fails, leaving citation previews blank. Use the already
+# bundled PDF.js viewer directly in a same-origin iframe instead.
+viewer_source = pdf_viewer_path.read_text()
+old_viewer_element = '''                <pdfjs-viewer-element id="pdf-viewer" viewer-path="GR_FILE_ROOT_PATH/file=PDFJS_PREBUILT_DIR" locale="en" phrase="true">
+                </pdfjs-viewer-element>'''
+new_viewer_element = '''                <iframe id="pdf-viewer"
+                  data-viewer-root="GR_FILE_ROOT_PATH/file=PDFJS_PREBUILT_DIR/web/viewer.html"
+                  title="Cited PDF page"
+                  style="width: 100%; height: 100%; border: 0;">
+                </iframe>'''
+if viewer_source.count(old_viewer_element) != 1:
+    raise RuntimeError("Unexpected Kotaemon PDF viewer element")
+viewer_source = viewer_source.replace(old_viewer_element, new_viewer_element)
+viewer_source = viewer_source.replace(
+    'var iframe = document.querySelector("#pdf-viewer").iframe;',
+    'var iframe = document.querySelector("#pdf-viewer");',
+)
+old_open = '''    current_src = pdfViewer.getAttribute("src");
+    if (current_src != src) {
+      pdfViewer.setAttribute("src", src);
+    }
+    // pdfViewer.setAttribute("phrase", phrase);
+    // pdfViewer.setAttribute("search", search);
+    pdfViewer.setAttribute("page", page);'''
+new_open = '''    var viewerRoot = pdfViewer.getAttribute("data-viewer-root");
+    var viewerSrc = viewerRoot + "?file=" + encodeURIComponent(src) + "#page=" + page;
+    if (pdfViewer.getAttribute("src") != viewerSrc) {
+      pdfViewer.setAttribute("src", viewerSrc);
+    }'''
+if viewer_source.count(old_open) != 1:
+    raise RuntimeError("Unexpected Kotaemon PDF open handler")
+pdf_viewer_path.write_text(viewer_source.replace(old_open, new_open))
+
+app_source = app_path.read_text()
+old_cdn = '''            "<script type='module' "
+            "src='https://cdn.skypack.dev/pdfjs-viewer-element'>"
+            "</script>"'''
+if app_source.count(old_cdn) != 1:
+    raise RuntimeError("Unexpected Kotaemon external PDF viewer import")
+app_path.write_text(app_source.replace(old_cdn, ""))

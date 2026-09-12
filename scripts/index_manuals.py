@@ -37,6 +37,23 @@ def indexed_names() -> set[str]:
         }
 
 
+def claim_admin_ownership() -> None:
+    """Make API-indexed documents visible to the local admin browser session."""
+    with sqlite3.connect(DATABASE) as connection:
+        admin = connection.execute(
+            "SELECT id FROM user WHERE username = 'admin'"
+        ).fetchone()
+        if admin is None:
+            raise RuntimeError("local admin user does not exist")
+        admin_id = admin[0]
+        connection.execute(
+            "UPDATE index__1__source SET user = ? WHERE user = ''", (admin_id,)
+        )
+        connection.execute(
+            "UPDATE index__1__index SET user = ? WHERE user = ''", (admin_id,)
+        )
+
+
 def main() -> int:
     manuals = sorted(MANUAL_DIR.glob("*.pdf"))
     done = indexed_names()
@@ -61,6 +78,7 @@ def main() -> int:
             failures.append((manual.name, str(error)))
             outcome = f"FAILED: {error}"
         else:
+            claim_admin_ownership()
             outcome = "indexed"
         elapsed = time.monotonic() - item_started
         total_elapsed = time.monotonic() - started

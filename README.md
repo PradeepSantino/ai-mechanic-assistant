@@ -62,4 +62,5 @@ make down
 The image is pinned by digest for reproducible setup and extended with
 Kotaemon's optional Docling dependency. OpenAI `text-embedding-3-small` is the
 default embedding model. Answers can cite the source PDF and page number; exact
-cropped visual excerpts are a separate UI feature still to be implemented.
+citations include highlighted extracted text and a local PDF.js preview of the
+original page.
