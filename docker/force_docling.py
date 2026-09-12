@@ -7,6 +7,10 @@ ingest_path = Path("/app/libs/kotaemon/kotaemon/indices/ingests/files.py")
 docling_loader_path = Path("/app/libs/kotaemon/kotaemon/loaders/docling_loader.py")
 pdf_viewer_path = Path("/app/libs/ktem/ktem/assets/js/pdf_viewer.js")
 app_path = Path("/app/libs/ktem/ktem/app.py")
+simple_reasoning_path = Path("/app/libs/ktem/ktem/reasoning/simple.py")
+citation_qa_path = Path(
+    "/app/libs/kotaemon/kotaemon/indices/qa/citation_qa.py"
+)
 
 pipeline_source = pipeline_path.read_text()
 old_param = 'reader_mode: str = Param("default", help="The reader mode")'
@@ -117,3 +121,32 @@ old_cdn = '''            "<script type='module' "
 if app_source.count(old_cdn) != 1:
     raise RuntimeError("Unexpected Kotaemon external PDF viewer import")
 app_path.write_text(app_source.replace(old_cdn, ""))
+
+# Keep demo answers deliberately short while retaining evidence-only behavior
+# and essential safety warnings.
+reasoning_source = simple_reasoning_path.read_text()
+old_system_prompt = '"value": ("This is a question answering system."),'
+new_system_prompt = '''"value": (
+                    "You are AI Mechanic Assistant. Answer only from the provided "
+                    "service-manual evidence. Use the fewest words that answer "
+                    "correctly. Prefer one sentence or 2-4 short bullets. Give the "
+                    "exact value or action first. Keep essential safety warnings. "
+                    "If evidence is insufficient, say: Not found in the selected "
+                    "manuals. Preserve source citations."
+                ),'''
+if reasoning_source.count(old_system_prompt) != 1:
+    raise RuntimeError("Unexpected Kotaemon system prompt default")
+simple_reasoning_path.write_text(
+    reasoning_source.replace(old_system_prompt, new_system_prompt)
+)
+
+qa_source = citation_qa_path.read_text()
+qa_source = qa_source.replace(
+    "answer the question at the end in detail with clear explanation.",
+    "answer the question using the fewest words that remain correct.",
+)
+qa_source = qa_source.replace(
+    "then provide answer with clear explanation.",
+    "then answer using the fewest words that remain correct.",
+)
+citation_qa_path.write_text(qa_source)
