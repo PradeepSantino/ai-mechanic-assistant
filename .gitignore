@@ -1,0 +1,32 @@
+# Local manuals and generated indexes
+data/manuals/*
+!data/manuals/.gitkeep
+data/indexes/*
+!data/indexes/.gitkeep
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# JavaScript / TypeScript
+node_modules/
+dist/
+.next/
+
+# IDE and operating system
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
