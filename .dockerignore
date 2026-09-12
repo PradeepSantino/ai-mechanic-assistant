@@ -1,0 +1,6 @@
+.git
+.env
+data/indexes
+data/kotaemon
+data/manuals
+*.log

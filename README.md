@@ -22,6 +22,31 @@ tests/       Automated tests
 
 The technology stack and application architecture will be chosen in the next phase.
 
-## Status
+## Run the local demo
 
-Repository scaffold only. No application code has been implemented yet.
+Requirements: Docker Desktop and an OpenAI API key.
+
+```bash
+make setup
+# Edit .env and add OPENAI_API_KEY
+make up
+```
+
+Open <http://127.0.0.1:7860>. The initial Kotaemon login is `admin` / `admin`.
+
+In Kotaemon, open **Settings → Retrieval Settings → File loader**, select
+**Docling (figure+table extraction)**, save, and upload a manual. Local data is
+persisted under `data/kotaemon`; source manuals can be placed under
+`data/manuals` and are never committed.
+
+Useful commands:
+
+```bash
+make status
+make test
+make logs
+make down
+```
+
+The image is pinned by digest for reproducible setup and extended with
+Kotaemon's optional Docling dependency.

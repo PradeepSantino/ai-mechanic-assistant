@@ -3,6 +3,7 @@ data/manuals/*
 !data/manuals/.gitkeep
 data/indexes/*
 !data/indexes/.gitkeep
+data/kotaemon/
 
 # Environment and secrets
 .env
