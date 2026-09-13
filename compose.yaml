@@ -13,6 +13,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4o-mini}
       OPENAI_EMBEDDINGS_MODEL: ${OPENAI_EMBEDDINGS_MODEL:-text-embedding-3-small}
+      USE_MS_GRAPHRAG: "false"
+      USE_LIGHTRAG: "false"
+      USE_NANO_GRAPHRAG: "false"
     volumes:
       - ./data/kotaemon:/app/ktem_app_data
       - ./data/manuals:/app/manuals:ro

@@ -8,6 +8,9 @@ docling_loader_path = Path("/app/libs/kotaemon/kotaemon/loaders/docling_loader.p
 pdf_viewer_path = Path("/app/libs/ktem/ktem/assets/js/pdf_viewer.js")
 app_path = Path("/app/libs/ktem/ktem/app.py")
 simple_reasoning_path = Path("/app/libs/ktem/ktem/reasoning/simple.py")
+chat_page_path = Path("/app/libs/ktem/ktem/pages/chat/__init__.py")
+chat_panel_path = Path("/app/libs/ktem/ktem/pages/chat/chat_panel.py")
+main_css_path = Path("/app/libs/ktem/ktem/assets/css/main.css")
 citation_qa_path = Path(
     "/app/libs/kotaemon/kotaemon/indices/qa/citation_qa.py"
 )
@@ -143,7 +146,24 @@ old_cdn = '''            "<script type='module' "
             "</script>"'''
 if app_source.count(old_cdn) != 1:
     raise RuntimeError("Unexpected Kotaemon external PDF viewer import")
-app_path.write_text(app_source.replace(old_cdn, ""))
+app_source = app_source.replace(old_cdn, "")
+old_index_startup = '''        self.index_manager = IndexManager(self)
+        self.index_manager.on_application_startup()
+
+        for index in self.index_manager.indices:'''
+new_index_startup = '''        self.index_manager = IndexManager(self)
+        self.index_manager.on_application_startup()
+        # Legacy graph indices can persist in Kotaemon's database even after the
+        # feature flags are disabled. This demo uses only the normal file index.
+        self.index_manager._indices = [
+            index for index in self.index_manager.indices
+            if index.__class__.__name__ == "FileIndex"
+        ]
+
+        for index in self.index_manager.indices:'''
+if app_source.count(old_index_startup) != 1:
+    raise RuntimeError("Unexpected Kotaemon index startup")
+app_path.write_text(app_source.replace(old_index_startup, new_index_startup))
 
 # Keep demo answers deliberately short while retaining evidence-only behavior
 # and essential safety warnings.
@@ -173,6 +193,154 @@ if reasoning_source.count(old_system_prompt) != 1:
 simple_reasoning_path.write_text(
     reasoning_source.replace(old_system_prompt, new_system_prompt)
 )
+
+# Put numbered source markers in the answer and keep the evidence panel focused
+# on cited material only. The retrieval pipeline can use 40 chunks internally,
+# but the user should never see that whole working set.
+reasoning_source = simple_reasoning_path.read_text()
+old_citation_default = '''"value": (
+                    "highlight"
+                    if not config("USE_LOW_LLM_REQUESTS", default=False, cast=bool)
+                    else "off"
+                ),'''
+new_citation_default = '''"value": (
+                    "inline"
+                    if not config("USE_LOW_LLM_REQUESTS", default=False, cast=bool)
+                    else "off"
+                ),'''
+if reasoning_source.count(old_citation_default) != 1:
+    raise RuntimeError("Unexpected Kotaemon citation default")
+reasoning_source = reasoning_source.replace(old_citation_default, new_citation_default)
+
+old_evidence_output = '''            yield from with_citation
+            if without_citation:
+                yield from without_citation'''
+new_evidence_output = '''            # Show at most three cited pages. Do not expose every retrieved chunk.
+            yield from with_citation[:3]'''
+if reasoning_source.count(old_evidence_output) != 1:
+    raise RuntimeError("Unexpected Kotaemon evidence output")
+simple_reasoning_path.write_text(
+    reasoning_source.replace(old_evidence_output, new_evidence_output)
+)
+
+# Copy up to three short, actually cited excerpts beneath the answer. Each card
+# retains the exact-page PDF Preview link, so diagrams are one click away.
+chat_source = chat_page_path.read_text()
+old_pdfview_start = '''function() {
+    setTimeout(fullTextSearch(), 100);
+
+    // Get all links and attach click event'''
+new_pdfview_start = '''function() {
+    setTimeout(fullTextSearch(), 100);
+
+    setTimeout(() => {
+        const botMessages = document.querySelectorAll(
+            "div#main-chat-bot div.message-row.bot-row"
+        );
+        const lastBot = botMessages[botMessages.length - 1];
+        const evidenceRoot = document.querySelector("#html-info-panel > div:last-child");
+        if (!lastBot || !evidenceRoot) return;
+
+        const previous = lastBot.querySelector(".inline-manual-evidence");
+        if (previous) previous.remove();
+
+        const cited = Array.from(evidenceRoot.querySelectorAll("details.evidence"))
+            .filter((item) => item.querySelector("mark"))
+            .slice(0, 3);
+        if (!cited.length) return;
+
+        const block = document.createElement("div");
+        block.className = "inline-manual-evidence";
+        block.innerHTML = "<strong>Manual evidence</strong>";
+
+        cited.forEach((item) => {
+            const card = document.createElement("div");
+            card.className = "manual-evidence-card";
+            const source = item.querySelector("summary");
+            const marks = Array.from(item.querySelectorAll("mark"));
+            const excerpt = marks.map((mark) => mark.textContent.trim())
+                .filter(Boolean).join(" … ").slice(0, 520);
+            if (source) {
+                const sourceCopy = source.cloneNode(true);
+                sourceCopy.querySelectorAll("b").forEach((score) => score.remove());
+                sourceCopy.querySelectorAll("a.pdf-link").forEach((link) => {
+                    link.textContent = "[View cited page]";
+                    link.onclick = openModal;
+                });
+                card.appendChild(sourceCopy);
+            }
+            const quote = document.createElement("blockquote");
+            quote.textContent = excerpt;
+            card.appendChild(quote);
+            block.appendChild(card);
+        });
+        lastBot.appendChild(block);
+    }, 250);
+
+    // Get all links and attach click event'''
+if chat_source.count(old_pdfview_start) != 1:
+    raise RuntimeError("Unexpected Kotaemon PDF completion hook")
+chat_page_path.write_text(chat_source.replace(old_pdfview_start, new_pdfview_start))
+
+chat_source = chat_page_path.read_text()
+old_quick_upload = "with gr.Accordion(label=quick_upload_label) as _:"
+new_quick_upload = "with gr.Accordion(label=quick_upload_label, visible=False) as _:"
+if chat_source.count(old_quick_upload) != 1:
+    raise RuntimeError("Unexpected Kotaemon quick-upload accordion")
+chat_source = chat_source.replace(old_quick_upload, new_quick_upload)
+chat_source = chat_source.replace('label="Chat settings",', 'label="Answer options",')
+chat_page_path.write_text(chat_source)
+
+# Remove Kotaemon/GraphRAG wording from the empty-state copy and chat input.
+panel_source = chat_panel_path.read_text()
+old_placeholder = '''PLACEHOLDER_TEXT = (
+        "This is the beginning of a new conversation.\\n"
+        "Start by uploading a file or a web URL. "
+        "Visit Files tab for more options (e.g: GraphRAG)."
+    )'''
+new_placeholder = '''PLACEHOLDER_TEXT = (
+        "Ask a question about the indexed service manuals. "
+        "Answers include concise, page-linked evidence."
+    )'''
+if panel_source.count(old_placeholder) != 1:
+    raise RuntimeError("Unexpected Kotaemon empty-state copy")
+panel_source = panel_source.replace(old_placeholder, new_placeholder)
+panel_source = panel_source.replace(
+    '"Type a message, use @WebSearch, or tag a file with @filename"',
+    '"Ask a question about the vehicle"',
+)
+chat_panel_path.write_text(panel_source)
+
+css_source = main_css_path.read_text()
+css_source += '''
+
+/* Compact evidence shown with the answer; retrieval internals stay hidden. */
+.inline-manual-evidence {
+  margin: 12px 0 2px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color-primary);
+}
+.manual-evidence-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color-primary);
+  border-radius: 8px;
+  background: var(--background-fill-secondary);
+}
+.manual-evidence-card summary {
+  display: block;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+.manual-evidence-card blockquote {
+  margin: 6px 0 0;
+  font-size: 0.9em;
+  line-height: 1.35;
+  max-height: 5.4em;
+  overflow: hidden;
+}
+'''
+main_css_path.write_text(css_source)
 
 qa_source = citation_qa_path.read_text()
 qa_source = qa_source.replace(
