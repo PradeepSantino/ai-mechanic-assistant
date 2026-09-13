@@ -76,8 +76,15 @@ class RegCheckTests(unittest.TestCase):
 
     def test_summary_discloses_missing_vin(self):
         summary = vehicle_summary(
-            {"RegistrationNumber": "ABC123", "State": "VIC"}
+            {
+                "RegistrationNumber": "ABC123",
+                "State": "VIC",
+                "CarMake": {"CurrentTextValue": "Toyota"},
+                "CarModel": {"CurrentTextValue": "RAV4"},
+                "RegistrationYear": "2012",
+            }
         )
+        self.assertIn("Vehicle selected:** Toyota RAV4 — 2012", summary)
         self.assertIn("VIN was not supplied", summary)
 
     def test_manual_scope_matches_demo_rav4(self):

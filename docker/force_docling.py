@@ -269,7 +269,6 @@ from ai_mechanic.regcheck import (
     AUSTRALIAN_STATES,
     VehicleLookupError,
     compatible_manual_ids,
-    extract_plate_from_image,
     lookup_australia,
     vehicle_context,
     vehicle_manual_scope,
@@ -301,16 +300,10 @@ new_chat_area = '''            with gr.Column(scale=6, elem_id="chat-area"):
 
                 with gr.Column(elem_id="new-chat-start") as self.rego_start_panel:
                     gr.Markdown(
-                        "### Start with a vehicle\\n"
-                        "Identify the car first so every question uses the right manual."
+                        "### Identify the vehicle\\n"
+                        "Enter the registration before asking a mechanical question."
                     )
-                    self.rego_start = gr.Button(
-                        "Rego lookup", variant="primary", elem_id="rego-start-button"
-                    )
-                    with gr.Group(visible=False) as self.rego_form:
-                        self.rego_image = gr.Image(
-                            label="Number plate photo", type="filepath", height=180
-                        )
+                    with gr.Group() as self.rego_form:
                         with gr.Row():
                             self.rego_number = gr.Textbox(
                                 label="Registration", placeholder="e.g. ABC123"
@@ -323,7 +316,7 @@ new_chat_area = '''            with gr.Column(scale=6, elem_id="chat-area"):
                         self.rego_button = gr.Button(
                             "Use this vehicle", variant="primary"
                         )
-                        self.rego_status = gr.Markdown()
+                    self.rego_status = gr.Markdown()
 
                 self.chat_panel = ChatPanel(self._app)'''
 if chat_source.count(old_chat_area) != 1:
@@ -333,15 +326,9 @@ chat_source = chat_source.replace(old_chat_area, new_chat_area)
 old_register_start = '''    def on_register_events(self):
         # first index paper recommendation'''
 new_register_start = '''    def on_register_events(self):
-        self.rego_start.click(
-            fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
-            outputs=[self.rego_start, self.rego_form],
-            show_progress="hidden",
-        )
         self.rego_button.click(
             fn=self.lookup_vehicle,
             inputs=[
-                self.rego_image,
                 self.rego_number,
                 self.rego_state,
                 self.first_selector_choices,
@@ -355,6 +342,7 @@ new_register_start = '''    def on_register_events(self):
                 self._indices_input[0],
                 self._indices_input[1],
                 self.state_chat,
+                self.rego_form,
             ],
             show_progress="minimal",
         )
@@ -372,19 +360,15 @@ new_register_start = '''    def on_register_events(self):
             fn=lambda: (
                 "",
                 "",
-                None,
                 "",
                 gr.update(visible=True),
                 gr.update(visible=True),
-                gr.update(visible=False),
             ),
             outputs=[
                 self.vehicle_context,
                 self.rego_status,
-                self.rego_image,
                 self.rego_number,
                 self.rego_start_panel,
-                self.rego_start,
                 self.rego_form,
             ],
             show_progress="hidden",
@@ -471,19 +455,10 @@ chat_source = chat_source.replace(old_llm_query, new_llm_query)
 
 old_recommendations = '''    def get_recommendations(self, first_selector_choices, file_ids):'''
 new_recommendations = '''    def lookup_vehicle(
-        self, image_path, registration, state, first_selector_choices, chat_state
+        self, registration, state, first_selector_choices, chat_state
     ):
         try:
             selected_state = state
-            if image_path and not (registration or "").strip():
-                reading = extract_plate_from_image(
-                    image_path,
-                    os.environ.get("OPENAI_API_KEY", ""),
-                    model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
-                )
-                registration = reading.registration
-                selected_state = reading.state or state
-
             vehicle = lookup_australia(
                 registration,
                 selected_state,
@@ -518,6 +493,7 @@ new_recommendations = '''    def lookup_vehicle(
                 "select",
                 selected_files,
                 updated_state,
+                gr.update(visible=False),
             )
         except VehicleLookupError as exc:
             return (
@@ -528,6 +504,7 @@ new_recommendations = '''    def lookup_vehicle(
                 gr.update(),
                 gr.update(),
                 chat_state,
+                gr.update(visible=True),
             )
 
     def get_recommendations(self, first_selector_choices, file_ids):'''

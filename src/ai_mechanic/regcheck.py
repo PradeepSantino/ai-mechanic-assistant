@@ -241,11 +241,17 @@ def vehicle_context(vehicle: dict[str, Any]) -> str:
 
 
 def vehicle_summary(vehicle: dict[str, Any]) -> str:
-    context = vehicle_context(vehicle)
+    make = _text_value(vehicle.get("CarMake") or vehicle.get("MakeDescription"))
+    model = _text_value(vehicle.get("CarModel") or vehicle.get("ModelDescription"))
+    year = vehicle.get("RegistrationYear") or vehicle.get("ManufactureYearFrom")
+    identity = " ".join(part for part in (make, model) if part)
+    if not identity:
+        identity = str(vehicle.get("Description") or "Vehicle")
+    year_note = f" — {year}" if year else ""
     vin = vehicle.get("VIN") or vehicle.get("Vin")
-    vin_note = "" if vin else "\n\n_VIN was not supplied by RegCheck for this lookup._"
-    return (
-        f"**Vehicle selected:** {context}{vin_note}"
-        if context
-        else f"**Vehicle selected.**{vin_note}"
+    vin_note = (
+        f"\n\n**VIN:** {vin}"
+        if vin
+        else "\n\n_VIN was not supplied by RegCheck for this lookup._"
     )
+    return f"**Vehicle selected:** {identity}{year_note}{vin_note}"
