@@ -13,6 +13,9 @@ chat_panel_path = Path("/app/libs/ktem/ktem/pages/chat/chat_panel.py")
 citation_qa_path = Path(
     "/app/libs/kotaemon/kotaemon/indices/qa/citation_qa.py"
 )
+citation_utils_path = Path(
+    "/app/libs/kotaemon/kotaemon/indices/qa/utils.py"
+)
 
 pipeline_source = pipeline_path.read_text()
 old_param = 'reader_mode: str = Param("default", help="The reader mode")'
@@ -271,3 +274,97 @@ qa_source = qa_source.replace(
     "then answer using the fewest words that remain correct.",
 )
 citation_qa_path.write_text(qa_source)
+
+# Kotaemon's stock citation matcher accepts a 35% fuzzy subsequence. Generic
+# workshop language ("Torque", "bolt A", units) can therefore map a correct
+# answer to an unrelated manual page. Citation phrases are copied from context,
+# so require an exact textual match while tolerating PDF line-wrap whitespace.
+utils_source = citation_utils_path.read_text()
+old_find_text = '''def find_text(search_span, context, min_length=5):
+    search_span, context = search_span.lower(), context.lower()
+
+    sentence_list = search_span.split("\\n")
+    context = context.replace("\\n", " ")
+
+    matches_span = []
+    # don't search for small text
+    if len(search_span) > min_length:
+        for sentence in sentence_list:
+            match_results = SequenceMatcher(
+                None,
+                sentence,
+                context,
+                autojunk=False,
+            ).get_matching_blocks()
+
+            matched_blocks = []
+            for _, start, length in match_results:
+                if length > max(len(sentence) * 0.25, min_length):
+                    matched_blocks.append((start, start + length))
+
+            if matched_blocks:
+                start_index = min(start for start, _ in matched_blocks)
+                end_index = max(end for _, end in matched_blocks)
+                length = end_index - start_index
+
+                if length > max(len(sentence) * 0.35, min_length):
+                    matches_span.append((start_index, end_index))
+
+    if matches_span:
+        # merge all matches into one span
+        final_span = min(start for start, _ in matches_span), max(
+            end for _, end in matches_span
+        )
+        matches_span = [final_span]
+
+    return matches_span'''
+new_find_text = '''def find_text(search_span, context, min_length=12):
+    import re
+
+    search_span = search_span.strip()
+    if len(search_span) <= min_length:
+        return []
+
+    # Preserve original offsets for highlighting, but allow line wrapping and
+    # repeated spaces introduced by PDF extraction.
+    tokens = re.split(r"\\s+", search_span)
+    pattern = r"\\s+".join(re.escape(token) for token in tokens if token)
+    match = re.search(pattern, context, flags=re.IGNORECASE)
+    return [(match.start(), match.end())] if match else []'''
+if utils_source.count(old_find_text) != 1:
+    raise RuntimeError("Unexpected Kotaemon fuzzy citation matcher")
+citation_utils_path.write_text(utils_source.replace(old_find_text, new_find_text))
+
+qa_source = citation_qa_path.read_text()
+old_all_doc_matches = '''        for quote in evidences:
+            matched_excerpts = []
+            for doc in docs:
+                matches = find_text(quote, doc.text)
+
+                for start, end in matches:
+                    if "|" not in doc.text[start:end]:
+                        spans[doc.doc_id].append(
+                            {
+                                "start": start,
+                                "end": end,
+                            }
+                        )
+                        matched_excerpts.append(doc.text[start:end])
+
+            # print("Matched citation:", quote, matched_excerpts),'''
+new_single_doc_match = '''        for quote in evidences:
+            # Retrieved docs are relevance ordered. Bind each quotation to the
+            # first exact match only, instead of highlighting every similar page.
+            for doc in docs:
+                matches = find_text(quote, doc.text)
+                if not matches:
+                    continue
+                start, end = matches[0]
+                if "|" not in doc.text[start:end]:
+                    spans[doc.doc_id].append({"start": start, "end": end})
+                    break'''
+if qa_source.count(old_all_doc_matches) != 1:
+    raise RuntimeError("Unexpected Kotaemon citation document matcher")
+citation_qa_path.write_text(
+    qa_source.replace(old_all_doc_matches, new_single_doc_match)
+)
