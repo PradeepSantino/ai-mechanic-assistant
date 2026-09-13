@@ -1,0 +1,1 @@
+"""AI Mechanic Assistant integrations."""

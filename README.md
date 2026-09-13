@@ -24,15 +24,29 @@ The technology stack and application architecture will be chosen in the next pha
 
 ## Run the local demo
 
-Requirements: Docker Desktop and an OpenAI API key.
+Requirements: Docker Desktop, an OpenAI API key, and a RegCheck account username
+for Australian registration lookups.
 
 ```bash
 make setup
-# Edit .env and add OPENAI_API_KEY
+# Edit .env and add OPENAI_API_KEY and REGCHECK_USERNAME
 make up
 ```
 
 Open <http://127.0.0.1:7860>. The initial Kotaemon login is `admin` / `admin`.
+
+## Vehicle registration lookup
+
+Use **Rego Lookup** in the new-chat sidebar to enter an Australian registration
+and state, or upload a clear photograph of a registration plate. Plate text is
+read using the configured OpenAI API, then the server calls RegCheck's Australian
+lookup. The selected vehicle's returned make, model, year, engine, transmission,
+fuel and VIN (when supplied) are added to that chat's context.
+
+`REGCHECK_USERNAME` remains server-side and is never sent to the browser. The
+Australian RegCheck response does not guarantee a VIN; when it is absent the UI
+says so explicitly. A different Australian vehicle-data provider will be needed
+if guaranteed registration-to-VIN resolution is a requirement.
 
 PDF quick uploads are forced through **Docling** with layout and table parsing.
 OCR is disabled for this demo corpus because all 517 RAV4 PDFs already contain

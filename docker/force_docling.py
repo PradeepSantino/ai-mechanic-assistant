@@ -172,7 +172,10 @@ app_path.write_text(app_source.replace(old_index_startup, new_index_startup))
 reasoning_source = simple_reasoning_path.read_text()
 old_system_prompt = '"value": ("This is a question answering system."),'
 new_system_prompt = '''"value": (
-                    "You are AI Mechanic Assistant. Answer only from the provided "
+                    "You are AI Mechanic Assistant. A question may include trusted "
+                    "vehicle identity from a server-side registration lookup; use it "
+                    "to answer which vehicle is selected and to determine applicability. "
+                    "Answer technical and repair questions only from the provided "
                     "service-manual evidence. Use the fewest words that answer "
                     "correctly. Prefer one sentence or 2-4 short bullets. Give the "
                     "exact value or action first. Keep essential safety warnings. "
@@ -242,6 +245,189 @@ if chat_source.count(old_quick_upload) != 1:
     raise RuntimeError("Unexpected Kotaemon quick-upload accordion")
 chat_source = chat_source.replace(old_quick_upload, new_quick_upload)
 chat_source = chat_source.replace('label="Chat settings",', 'label="Answer options",')
+chat_page_path.write_text(chat_source)
+
+# Add a server-side Australian registration lookup to the chat sidebar and keep
+# the resulting vehicle/VIN as hidden context for later questions.
+chat_source = chat_page_path.read_text()
+old_import_anchor = '''import asyncio
+import json
+import re'''
+new_import_anchor = '''import asyncio
+import json
+import os
+import re'''
+if chat_source.count(old_import_anchor) != 1:
+    raise RuntimeError("Unexpected Kotaemon chat imports")
+chat_source = chat_source.replace(old_import_anchor, new_import_anchor)
+
+old_document_import = '''from kotaemon.base import Document
+from kotaemon.indices.ingests.files import KH_DEFAULT_FILE_EXTRACTORS'''
+new_document_import = '''from kotaemon.base import Document
+from kotaemon.indices.ingests.files import KH_DEFAULT_FILE_EXTRACTORS
+from ai_mechanic.regcheck import (
+    AUSTRALIAN_STATES,
+    VehicleLookupError,
+    extract_plate_from_image,
+    lookup_australia,
+    vehicle_context,
+    vehicle_summary,
+)'''
+if chat_source.count(old_document_import) != 1:
+    raise RuntimeError("Unexpected Kotaemon Document import")
+chat_source = chat_source.replace(old_document_import, new_document_import)
+
+old_chat_control = '''                self.chat_control = ConversationControl(self._app)
+
+                for index_id, index in enumerate(self._app.index_manager.indices):'''
+new_chat_control = '''                self.chat_control = ConversationControl(self._app)
+                self.vehicle_context = gr.State(value="")
+                with gr.Accordion(
+                    label="Rego Lookup", open=False, elem_id="rego-lookup"
+                ):
+                    self.rego_image = gr.Image(
+                        label="Number plate photo", type="filepath", height=150
+                    )
+                    self.rego_number = gr.Textbox(
+                        label="Registration", placeholder="e.g. ABC123"
+                    )
+                    self.rego_state = gr.Dropdown(
+                        label="State", choices=list(AUSTRALIAN_STATES), value="VIC"
+                    )
+                    self.rego_button = gr.Button("Look up vehicle", variant="primary")
+                    self.rego_status = gr.Markdown()
+
+                for index_id, index in enumerate(self._app.index_manager.indices):'''
+if chat_source.count(old_chat_control) != 1:
+    raise RuntimeError("Unexpected Kotaemon conversation controls")
+chat_source = chat_source.replace(old_chat_control, new_chat_control)
+
+old_register_start = '''    def on_register_events(self):
+        # first index paper recommendation'''
+new_register_start = '''    def on_register_events(self):
+        self.rego_button.click(
+            fn=self.lookup_vehicle,
+            inputs=[self.rego_image, self.rego_number, self.rego_state],
+            outputs=[
+                self.vehicle_context,
+                self.rego_status,
+                self.rego_number,
+                self.rego_state,
+            ],
+            show_progress="minimal",
+        )
+        self.chat_control.btn_new.click(
+            fn=lambda: ("", "", None, ""),
+            outputs=[
+                self.vehicle_context,
+                self.rego_status,
+                self.rego_image,
+                self.rego_number,
+            ],
+            show_progress="hidden",
+        )
+
+        # first index paper recommendation'''
+if chat_source.count(old_register_start) != 1:
+    raise RuntimeError("Unexpected Kotaemon event registration")
+chat_source = chat_source.replace(old_register_start, new_register_start)
+
+old_chat_fn_input = '''                    self._command_state,
+                    self._app.user_id,
+                ]
+                + self._indices_input,'''
+new_chat_fn_input = '''                    self._command_state,
+                    self._app.user_id,
+                    self.vehicle_context,
+                ]
+                + self._indices_input,'''
+if chat_source.count(old_chat_fn_input) != 1:
+    raise RuntimeError("Unexpected Kotaemon chat function inputs")
+chat_source = chat_source.replace(old_chat_fn_input, new_chat_fn_input)
+
+old_chat_fn_signature = '''        command_state,
+        user_id,
+        *selecteds,
+    ):
+        """Chat function"""'''
+new_chat_fn_signature = '''        command_state,
+        user_id,
+        selected_vehicle_context,
+        *selecteds,
+    ):
+        """Chat function"""'''
+if chat_source.count(old_chat_fn_signature) != 1:
+    raise RuntimeError("Unexpected Kotaemon chat function signature")
+chat_source = chat_source.replace(old_chat_fn_signature, new_chat_fn_signature)
+
+old_llm_query = '''        llm_query = prepare_llm_query(
+            display_input,
+            has_selected_files=self._has_selected_files(user_id, *selecteds),
+            default_question=DEFAULT_QUESTION,
+        )
+
+        queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()'''
+new_llm_query = '''        llm_query = prepare_llm_query(
+            display_input,
+            has_selected_files=self._has_selected_files(user_id, *selecteds),
+            default_question=DEFAULT_QUESTION,
+        )
+        if selected_vehicle_context:
+            llm_query = (
+                "Selected vehicle from an Australian registration lookup: "
+                f"{selected_vehicle_context}\\n"
+                "Use this context to resolve model, year, engine and transmission "
+                "applicability. If the indexed manuals do not cover this vehicle, "
+                "say so explicitly.\\nQuestion: " + llm_query
+            )
+
+        if selected_vehicle_context and re.search(
+            r"\\b(what|which) (car|vehicle)|vehicle.*discuss|selected vehicle\\b",
+            display_input,
+            flags=re.IGNORECASE,
+        ):
+            yield (
+                chat_history
+                + [(display_input, f"Selected vehicle: {selected_vehicle_context}.")],
+                "",
+                gr.update(visible=False),
+                None,
+                chat_state,
+            )
+            return
+
+        queue: asyncio.Queue[Optional[dict]] = asyncio.Queue()'''
+if chat_source.count(old_llm_query) != 1:
+    raise RuntimeError("Unexpected Kotaemon LLM query preparation")
+chat_source = chat_source.replace(old_llm_query, new_llm_query)
+
+old_recommendations = '''    def get_recommendations(self, first_selector_choices, file_ids):'''
+new_recommendations = '''    def lookup_vehicle(self, image_path, registration, state):
+        try:
+            selected_state = state
+            if image_path and not (registration or "").strip():
+                reading = extract_plate_from_image(
+                    image_path,
+                    os.environ.get("OPENAI_API_KEY", ""),
+                    model=os.environ.get("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
+                )
+                registration = reading.registration
+                selected_state = reading.state or state
+
+            vehicle = lookup_australia(
+                registration,
+                selected_state,
+                os.environ.get("REGCHECK_USERNAME", ""),
+            )
+            context = vehicle_context(vehicle)
+            return context, vehicle_summary(vehicle), registration, selected_state
+        except VehicleLookupError as exc:
+            return "", f"**Lookup failed:** {exc}", registration, state
+
+    def get_recommendations(self, first_selector_choices, file_ids):'''
+if chat_source.count(old_recommendations) != 1:
+    raise RuntimeError("Unexpected Kotaemon recommendations method")
+chat_source = chat_source.replace(old_recommendations, new_recommendations)
 chat_page_path.write_text(chat_source)
 
 # Remove Kotaemon/GraphRAG wording from the empty-state copy and chat input.
