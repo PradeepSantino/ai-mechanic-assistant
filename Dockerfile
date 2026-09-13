@@ -10,4 +10,5 @@ COPY src/ai_mechanic /app/ai_mechanic
 # when Docling is selected in Settings. Make Docling the default and enforce it
 # for quick uploads so demo indexes cannot silently use PDFThumbnailReader.
 COPY docker/force_docling.py /tmp/force_docling.py
+COPY docker/pdf_highlights.js /tmp/pdf_highlights.js
 RUN /app/.venv/bin/python /tmp/force_docling.py && rm /tmp/force_docling.py

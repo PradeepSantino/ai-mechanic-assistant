@@ -142,6 +142,24 @@ if viewer_source.count(old_open) != 1:
     raise RuntimeError("Unexpected Kotaemon PDF open handler")
 pdf_viewer_path.write_text(viewer_source.replace(old_open, new_open))
 
+viewer_source = pdf_viewer_path.read_text()
+start = viewer_source.index('  globalThis.compareText =')
+end = viewer_source.index('  // Sleep function', start)
+viewer_source = (
+    viewer_source[:start] + Path('/tmp/pdf_highlights.js').read_text()
+    + '\n' + viewer_source[end:]
+)
+viewer_source = viewer_source.replace(
+    '    event.preventDefault();',
+    '    event.preventDefault();\n    const generation = ++highlightGeneration;',
+    1,
+)
+viewer_source = viewer_source.replace(
+    '    compareText(search_phrases, page);',
+    '    compareText(search_phrases, page, generation);',
+)
+pdf_viewer_path.write_text(viewer_source)
+
 app_source = app_path.read_text()
 old_cdn = '''            "<script type='module' "
             "src='https://cdn.skypack.dev/pdfjs-viewer-element'>"
@@ -639,6 +657,14 @@ new_find_text = '''def find_text(search_span, context, min_length=12):
     tokens = re.split(r"\\s+", search_span)
     pattern = r"\\s+".join(re.escape(token) for token in tokens if token)
     match = re.search(pattern, context, flags=re.IGNORECASE)
+    # Manuals often put 'Torque:' only on the first of several bolt values.
+    # Allow that label to be omitted, while still requiring the full numeric
+    # value, units and bolt designation to match exactly.
+    if not match and re.match(r"(?i)^torque:\\s*\\d", search_span):
+        value = re.sub(r"(?i)^torque:\\s*", "", search_span)
+        if re.search(r"(?i)\\bbolt\\s+[a-z]\\b", value):
+            pattern = r"\\s+".join(re.escape(t) for t in value.split())
+            match = re.search(pattern, context, flags=re.IGNORECASE)
     return [(match.start(), match.end())] if match else []'''
 if utils_source.count(old_find_text) != 1:
     raise RuntimeError("Unexpected Kotaemon fuzzy citation matcher")
