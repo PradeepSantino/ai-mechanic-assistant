@@ -10,7 +10,6 @@ app_path = Path("/app/libs/ktem/ktem/app.py")
 simple_reasoning_path = Path("/app/libs/ktem/ktem/reasoning/simple.py")
 chat_page_path = Path("/app/libs/ktem/ktem/pages/chat/__init__.py")
 chat_panel_path = Path("/app/libs/ktem/ktem/pages/chat/chat_panel.py")
-main_css_path = Path("/app/libs/ktem/ktem/assets/css/main.css")
 citation_qa_path = Path(
     "/app/libs/kotaemon/kotaemon/indices/qa/citation_qa.py"
 )
@@ -194,24 +193,9 @@ simple_reasoning_path.write_text(
     reasoning_source.replace(old_system_prompt, new_system_prompt)
 )
 
-# Put numbered source markers in the answer and keep the evidence panel focused
-# on cited material only. The retrieval pipeline can use 40 chunks internally,
-# but the user should never see that whole working set.
+# Keep the evidence panel focused on cited material only. The retrieval pipeline
+# can use 40 chunks internally, but the user should never see that working set.
 reasoning_source = simple_reasoning_path.read_text()
-old_citation_default = '''"value": (
-                    "highlight"
-                    if not config("USE_LOW_LLM_REQUESTS", default=False, cast=bool)
-                    else "off"
-                ),'''
-new_citation_default = '''"value": (
-                    "inline"
-                    if not config("USE_LOW_LLM_REQUESTS", default=False, cast=bool)
-                    else "off"
-                ),'''
-if reasoning_source.count(old_citation_default) != 1:
-    raise RuntimeError("Unexpected Kotaemon citation default")
-reasoning_source = reasoning_source.replace(old_citation_default, new_citation_default)
-
 old_evidence_output = '''            yield from with_citation
             if without_citation:
                 yield from without_citation'''
@@ -223,8 +207,9 @@ simple_reasoning_path.write_text(
     reasoning_source.replace(old_evidence_output, new_evidence_output)
 )
 
-# Copy up to three short, actually cited excerpts beneath the answer. Each card
-# retains the exact-page PDF Preview link, so diagrams are one click away.
+# Automatically replace the raw evidence list with the highest-ranked cited PDF
+# page in the right panel. Kotaemon's PDF.js integration also highlights the
+# cited phrase on the rendered page when it can match the text layer.
 chat_source = chat_page_path.read_text()
 old_pdfview_start = '''function() {
     setTimeout(fullTextSearch(), 100);
@@ -234,47 +219,12 @@ new_pdfview_start = '''function() {
     setTimeout(fullTextSearch(), 100);
 
     setTimeout(() => {
-        const botMessages = document.querySelectorAll(
-            "div#main-chat-bot div.message-row.bot-row"
-        );
-        const lastBot = botMessages[botMessages.length - 1];
         const evidenceRoot = document.querySelector("#html-info-panel > div:last-child");
-        if (!lastBot || !evidenceRoot) return;
-
-        const previous = lastBot.querySelector(".inline-manual-evidence");
-        if (previous) previous.remove();
-
-        const cited = Array.from(evidenceRoot.querySelectorAll("details.evidence"))
-            .filter((item) => item.querySelector("mark"))
-            .slice(0, 3);
-        if (!cited.length) return;
-
-        const block = document.createElement("div");
-        block.className = "inline-manual-evidence";
-        block.innerHTML = "<strong>Manual evidence</strong>";
-
-        cited.forEach((item) => {
-            const card = document.createElement("div");
-            card.className = "manual-evidence-card";
-            const source = item.querySelector("summary");
-            const marks = Array.from(item.querySelectorAll("mark"));
-            const excerpt = marks.map((mark) => mark.textContent.trim())
-                .filter(Boolean).join(" … ").slice(0, 520);
-            if (source) {
-                const sourceCopy = source.cloneNode(true);
-                sourceCopy.querySelectorAll("b").forEach((score) => score.remove());
-                sourceCopy.querySelectorAll("a.pdf-link").forEach((link) => {
-                    link.textContent = "[View cited page]";
-                    link.onclick = openModal;
-                });
-                card.appendChild(sourceCopy);
-            }
-            const quote = document.createElement("blockquote");
-            quote.textContent = excerpt;
-            card.appendChild(quote);
-            block.appendChild(card);
-        });
-        lastBot.appendChild(block);
+        if (!evidenceRoot) return;
+        const firstCitedPage = Array.from(
+            evidenceRoot.querySelectorAll("details.evidence")
+        ).find((item) => item.querySelector("mark") && item.querySelector("a.pdf-link"));
+        if (firstCitedPage) firstCitedPage.querySelector("a.pdf-link").click();
     }, 250);
 
     // Get all links and attach click event'''
@@ -310,37 +260,6 @@ panel_source = panel_source.replace(
     '"Ask a question about the vehicle"',
 )
 chat_panel_path.write_text(panel_source)
-
-css_source = main_css_path.read_text()
-css_source += '''
-
-/* Compact evidence shown with the answer; retrieval internals stay hidden. */
-.inline-manual-evidence {
-  margin: 12px 0 2px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border-color-primary);
-}
-.manual-evidence-card {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-color-primary);
-  border-radius: 8px;
-  background: var(--background-fill-secondary);
-}
-.manual-evidence-card summary {
-  display: block;
-  font-size: 0.9em;
-  font-weight: 600;
-}
-.manual-evidence-card blockquote {
-  margin: 6px 0 0;
-  font-size: 0.9em;
-  line-height: 1.35;
-  max-height: 5.4em;
-  overflow: hidden;
-}
-'''
-main_css_path.write_text(css_source)
 
 qa_source = citation_qa_path.read_text()
 qa_source = qa_source.replace(
