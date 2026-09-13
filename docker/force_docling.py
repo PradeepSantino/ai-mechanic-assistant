@@ -199,6 +199,29 @@ simple_reasoning_path.write_text(
     reasoning_source.replace(old_system_prompt, new_system_prompt)
 )
 
+# Vehicle metadata grounds the answer but must not dilute exact mechanical
+# terms in the embedding query. Allow callers to provide a separate clean query.
+reasoning_source = simple_reasoning_path.read_text()
+old_retrieve_call = '''        print(f"Retrievers {self.retrievers}")
+        # should populate the context
+        docs, infos = self.retrieve(message, history)'''
+new_retrieve_call = '''        print(f"Retrievers {self.retrievers}")
+        # Keep answer-only grounding out of semantic retrieval.
+        retrieval_query = kwargs.pop("retrieval_query", message)
+        docs, infos = self.retrieve(retrieval_query, history)'''
+if reasoning_source.count(old_retrieve_call) != 1:
+    raise RuntimeError("Unexpected Kotaemon retrieval call")
+reasoning_source = reasoning_source.replace(old_retrieve_call, new_retrieve_call)
+old_score_call = '''            docs = self.retrievers[0].generate_relevant_scores(message, docs)'''
+new_score_call = '''            docs = self.retrievers[0].generate_relevant_scores(
+                retrieval_query, docs
+            )'''
+if reasoning_source.count(old_score_call) < 1:
+    raise RuntimeError("Unexpected Kotaemon relevance scoring call")
+simple_reasoning_path.write_text(
+    reasoning_source.replace(old_score_call, new_score_call, 1)
+)
+
 # Keep the evidence panel focused on cited material only. The retrieval pipeline
 # can use 40 chunks internally, but the user should never see that working set.
 reasoning_source = simple_reasoning_path.read_text()
@@ -424,13 +447,15 @@ new_llm_query = '''        llm_query = prepare_llm_query(
         selected_vehicle_context = chat_state.get("app", {}).get(
             "selected_vehicle_context", ""
         )
+        retrieval_query = llm_query
         if selected_vehicle_context:
             llm_query = (
                 "Selected vehicle from an Australian registration lookup: "
                 f"{selected_vehicle_context}\\n"
-                "Use this context to resolve model, year, engine and transmission "
-                "applicability. If the indexed manuals do not cover this vehicle, "
-                "say so explicitly.\\nQuestion: " + llm_query
+                "The compatible manual corpus has already been selected. Use the "
+                "vehicle context for model, year, engine and transmission variants. "
+                "Do not reject applicability merely because a retrieved excerpt "
+                "does not repeat the vehicle name or year.\\nQuestion: " + llm_query
             )
 
         if selected_vehicle_context and re.search(
@@ -452,6 +477,21 @@ new_llm_query = '''        llm_query = prepare_llm_query(
 if chat_source.count(old_llm_query) != 1:
     raise RuntimeError("Unexpected Kotaemon LLM query preparation")
 chat_source = chat_source.replace(old_llm_query, new_llm_query)
+
+old_pipeline_stream = '''            for response in pipeline.stream(
+                llm_query,
+                conversation_id,
+                chat_history,
+            ):'''
+new_pipeline_stream = '''            for response in pipeline.stream(
+                llm_query,
+                conversation_id,
+                chat_history,
+                retrieval_query=retrieval_query,
+            ):'''
+if chat_source.count(old_pipeline_stream) != 1:
+    raise RuntimeError("Unexpected Kotaemon pipeline stream call")
+chat_source = chat_source.replace(old_pipeline_stream, new_pipeline_stream)
 
 old_recommendations = '''    def get_recommendations(self, first_selector_choices, file_ids):'''
 new_recommendations = '''    def lookup_vehicle(
