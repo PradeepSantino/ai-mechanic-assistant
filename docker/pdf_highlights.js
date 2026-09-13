@@ -29,7 +29,7 @@ globalThis.compareText = (phrases, page, generation = highlightGeneration, attem
     found++;
     for (const range of ranges) {
       if (range.start < start + needle.length && range.end > start) {
-        range.span.style.backgroundColor = 'rgba(255, 210, 0, 0.45)';
+        range.span.style.backgroundColor = 'rgba(40, 200, 80, 0.65)';
       }
     }
   }
