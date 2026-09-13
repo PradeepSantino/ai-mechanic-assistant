@@ -79,3 +79,18 @@ Kotaemon's optional Docling dependency. OpenAI `text-embedding-3-small` is the
 default embedding model. Answers can cite the source PDF and page number; exact
 citations include highlighted extracted text and a local PDF.js preview of the
 original page.
+
+Questions are interpreted before retrieval: spelling is corrected, mechanical
+components and operations become focused search terms, and multi-part requests
+can produce up to three searches within the selected files. The original
+question and vehicle context remain available when generating the answer.
+This adds one model call per question; a failed rewrite falls back to the
+original search text.
+
+To replay the long, misspelled alternator question through both Search All and
+selected-file chat generation (uses model credits, does not save conversations):
+
+```bash
+docker compose exec -T -e PYTHONPATH=/app app \
+  /app/.venv/bin/python /app/project-scripts/check_search_all.py
+```

@@ -226,7 +226,35 @@ old_retrieve_call = '''        print(f"Retrievers {self.retrievers}")
 new_retrieve_call = '''        print(f"Retrievers {self.retrievers}")
         # Keep answer-only grounding out of semantic retrieval.
         retrieval_query = kwargs.pop("retrieval_query", message)
-        docs, infos = self.retrieve(retrieval_query, history)'''
+        from ai_mechanic.search_planning import PLANNING_PROMPT, parse_search_plan
+        search_queries = [retrieval_query]
+        try:
+            import json
+            search_plan = self.answering_pipeline.llm([
+                SystemMessage(content=PLANNING_PROMPT),
+                HumanMessage(content=json.dumps({
+                    "question": retrieval_query,
+                    "recent_history": history[-2:],
+                })),
+            ]).text.strip()
+            search_queries = parse_search_plan(search_plan, retrieval_query)
+        except Exception:
+            logger.warning("Search query cleanup failed; using original query")
+        retrieval_query = "; ".join(search_queries)
+        print(f"Mechanical search query: {retrieval_query}")
+        batches, infos = [], []
+        for search_query in search_queries:
+            retrieved, info = self.retrieve(search_query, history)
+            batches.append(retrieved)
+            infos.extend(info)
+        # Interleave task results so one question cannot starve the others.
+        docs, seen = [], set()
+        for rank in range(max((len(batch) for batch in batches), default=0)):
+            for batch in batches:
+                if rank < len(batch) and batch[rank].doc_id not in seen:
+                    docs.append(batch[rank])
+                    seen.add(batch[rank].doc_id)
+        docs = docs[:60]'''
 if reasoning_source.count(old_retrieve_call) != 1:
     raise RuntimeError("Unexpected Kotaemon retrieval call")
 reasoning_source = reasoning_source.replace(old_retrieve_call, new_retrieve_call)
