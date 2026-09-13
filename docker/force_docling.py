@@ -29,6 +29,29 @@ if pipeline_source.count(old_setting) != 1:
     raise RuntimeError("Unexpected Kotaemon file-loader setting")
 pipeline_path.write_text(pipeline_source.replace(old_setting, new_setting))
 
+pipeline_source = pipeline_path.read_text()
+old_retrieval_count = '''"num_retrieval": {
+                "name": "Number of document chunks to retrieve",
+                "value": 10,'''
+new_retrieval_count = '''"num_retrieval": {
+                "name": "Number of document chunks to retrieve",
+                "value": 25,'''
+old_retrieval_mode = '''"retrieval_mode": {
+                "name": "Retrieval mode",
+                "value": "hybrid",'''
+new_retrieval_mode = '''"retrieval_mode": {
+                "name": "Retrieval mode",
+                "value": "vector",'''
+if pipeline_source.count(old_retrieval_count) != 1:
+    raise RuntimeError("Unexpected Kotaemon retrieval count setting")
+if pipeline_source.count(old_retrieval_mode) != 1:
+    raise RuntimeError("Unexpected Kotaemon retrieval mode setting")
+pipeline_path.write_text(
+    pipeline_source.replace(old_retrieval_count, new_retrieval_count).replace(
+        old_retrieval_mode, new_retrieval_mode
+    )
+)
+
 ui_source = ui_path.read_text()
 old_override = 'settings[f"index.options.{self._index.id}.reader_mode"] = "default"'
 if ui_source.count(old_override) != 2:
