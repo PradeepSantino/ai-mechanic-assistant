@@ -35,7 +35,7 @@ old_retrieval_count = '''"num_retrieval": {
                 "value": 10,'''
 new_retrieval_count = '''"num_retrieval": {
                 "name": "Number of document chunks to retrieve",
-                "value": 25,'''
+                "value": 40,'''
 old_retrieval_mode = '''"retrieval_mode": {
                 "name": "Retrieval mode",
                 "value": "hybrid",'''
@@ -154,6 +154,17 @@ new_system_prompt = '''"value": (
                     "service-manual evidence. Use the fewest words that answer "
                     "correctly. Prefer one sentence or 2-4 short bullets. Give the "
                     "exact value or action first. Keep essential safety warnings. "
+                    "For removal, installation, replacement, diagnosis, or repair "
+                    "questions, first identify any build-date or equipment variants, "
+                    "then preserve the manual's numbered order and include prerequisite "
+                    "removals; never jump straight to the final action. For a long "
+                    "procedure, do not imitate the manual's step numbers with an "
+                    "incomplete list. Instead give concise ordered phases, explicitly "
+                    "label them as a summary, name the major trim, restraint, electrical, "
+                    "and safety prerequisites, cite the full applicable page range, and "
+                    "direct the user to those pages for every substep. If the vehicle's "
+                    "build date or equipment is not supplied, show every applicable "
+                    "variant and its page range before the summary. "
                     "If evidence is insufficient, say: Not found in the selected "
                     "manuals. Preserve source citations."
                 ),'''
