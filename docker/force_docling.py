@@ -268,9 +268,11 @@ from kotaemon.indices.ingests.files import KH_DEFAULT_FILE_EXTRACTORS
 from ai_mechanic.regcheck import (
     AUSTRALIAN_STATES,
     VehicleLookupError,
+    compatible_manual_ids,
     extract_plate_from_image,
     lookup_australia,
     vehicle_context,
+    vehicle_manual_scope,
     vehicle_summary,
 )'''
 if chat_source.count(old_document_import) != 1:
@@ -282,47 +284,108 @@ old_chat_control = '''                self.chat_control = ConversationControl(se
                 for index_id, index in enumerate(self._app.index_manager.indices):'''
 new_chat_control = '''                self.chat_control = ConversationControl(self._app)
                 self.vehicle_context = gr.State(value="")
-                with gr.Accordion(
-                    label="Rego Lookup", open=False, elem_id="rego-lookup"
-                ):
-                    self.rego_image = gr.Image(
-                        label="Number plate photo", type="filepath", height=150
-                    )
-                    self.rego_number = gr.Textbox(
-                        label="Registration", placeholder="e.g. ABC123"
-                    )
-                    self.rego_state = gr.Dropdown(
-                        label="State", choices=list(AUSTRALIAN_STATES), value="VIC"
-                    )
-                    self.rego_button = gr.Button("Look up vehicle", variant="primary")
-                    self.rego_status = gr.Markdown()
 
                 for index_id, index in enumerate(self._app.index_manager.indices):'''
 if chat_source.count(old_chat_control) != 1:
     raise RuntimeError("Unexpected Kotaemon conversation controls")
 chat_source = chat_source.replace(old_chat_control, new_chat_control)
 
+old_chat_area = '''            with gr.Column(scale=6, elem_id="chat-area"):
+                if KH_DEMO_MODE:
+                    self.paper_list = PaperListPage(self._app)
+
+                self.chat_panel = ChatPanel(self._app)'''
+new_chat_area = '''            with gr.Column(scale=6, elem_id="chat-area"):
+                if KH_DEMO_MODE:
+                    self.paper_list = PaperListPage(self._app)
+
+                with gr.Column(elem_id="new-chat-start") as self.rego_start_panel:
+                    gr.Markdown(
+                        "### Start with a vehicle\\n"
+                        "Identify the car first so every question uses the right manual."
+                    )
+                    self.rego_start = gr.Button(
+                        "Rego lookup", variant="primary", elem_id="rego-start-button"
+                    )
+                    with gr.Group(visible=False) as self.rego_form:
+                        self.rego_image = gr.Image(
+                            label="Number plate photo", type="filepath", height=180
+                        )
+                        with gr.Row():
+                            self.rego_number = gr.Textbox(
+                                label="Registration", placeholder="e.g. ABC123"
+                            )
+                            self.rego_state = gr.Dropdown(
+                                label="State",
+                                choices=list(AUSTRALIAN_STATES),
+                                value="VIC",
+                            )
+                        self.rego_button = gr.Button(
+                            "Use this vehicle", variant="primary"
+                        )
+                        self.rego_status = gr.Markdown()
+
+                self.chat_panel = ChatPanel(self._app)'''
+if chat_source.count(old_chat_area) != 1:
+    raise RuntimeError("Unexpected Kotaemon chat-area layout")
+chat_source = chat_source.replace(old_chat_area, new_chat_area)
+
 old_register_start = '''    def on_register_events(self):
         # first index paper recommendation'''
 new_register_start = '''    def on_register_events(self):
+        self.rego_start.click(
+            fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
+            outputs=[self.rego_start, self.rego_form],
+            show_progress="hidden",
+        )
         self.rego_button.click(
             fn=self.lookup_vehicle,
-            inputs=[self.rego_image, self.rego_number, self.rego_state],
+            inputs=[
+                self.rego_image,
+                self.rego_number,
+                self.rego_state,
+                self.first_selector_choices,
+                self.state_chat,
+            ],
             outputs=[
                 self.vehicle_context,
                 self.rego_status,
                 self.rego_number,
                 self.rego_state,
+                self._indices_input[0],
+                self._indices_input[1],
+                self.state_chat,
             ],
             show_progress="minimal",
         )
+        self.chat_panel.text_input.submit(
+            fn=lambda: gr.update(visible=False),
+            outputs=self.rego_start_panel,
+            show_progress="hidden",
+        )
+        self.chat_control.conversation.select(
+            fn=lambda: gr.update(visible=False),
+            outputs=self.rego_start_panel,
+            show_progress="hidden",
+        )
         self.chat_control.btn_new.click(
-            fn=lambda: ("", "", None, ""),
+            fn=lambda: (
+                "",
+                "",
+                None,
+                "",
+                gr.update(visible=True),
+                gr.update(visible=True),
+                gr.update(visible=False),
+            ),
             outputs=[
                 self.vehicle_context,
                 self.rego_status,
                 self.rego_image,
                 self.rego_number,
+                self.rego_start_panel,
+                self.rego_start,
+                self.rego_form,
             ],
             show_progress="hidden",
         )
@@ -372,6 +435,11 @@ new_llm_query = '''        llm_query = prepare_llm_query(
             has_selected_files=self._has_selected_files(user_id, *selecteds),
             default_question=DEFAULT_QUESTION,
         )
+        # The persisted conversation state is authoritative. This prevents a
+        # vehicle selected in one chat leaking into another after switching.
+        selected_vehicle_context = chat_state.get("app", {}).get(
+            "selected_vehicle_context", ""
+        )
         if selected_vehicle_context:
             llm_query = (
                 "Selected vehicle from an Australian registration lookup: "
@@ -402,7 +470,9 @@ if chat_source.count(old_llm_query) != 1:
 chat_source = chat_source.replace(old_llm_query, new_llm_query)
 
 old_recommendations = '''    def get_recommendations(self, first_selector_choices, file_ids):'''
-new_recommendations = '''    def lookup_vehicle(self, image_path, registration, state):
+new_recommendations = '''    def lookup_vehicle(
+        self, image_path, registration, state, first_selector_choices, chat_state
+    ):
         try:
             selected_state = state
             if image_path and not (registration or "").strip():
@@ -420,9 +490,45 @@ new_recommendations = '''    def lookup_vehicle(self, image_path, registration, 
                 os.environ.get("REGCHECK_USERNAME", ""),
             )
             context = vehicle_context(vehicle)
-            return context, vehicle_summary(vehicle), registration, selected_state
+            matches, manual_label = vehicle_manual_scope(vehicle)
+            available_files, _ = compatible_manual_ids(
+                vehicle, first_selector_choices
+            )
+            if matches:
+                scope_message = (
+                    f"\\n\\n**Manual scope:** {manual_label} "
+                    f"({len(available_files)} indexed files)."
+                )
+                selected_files = gr.update(
+                    value=available_files, choices=first_selector_choices
+                )
+            else:
+                scope_message = (
+                    f"\\n\\n**No compatible local manual:** this demo currently has "
+                    f"only {manual_label}. Retrieval is disabled for this vehicle."
+                )
+                selected_files = gr.update(value=[], choices=first_selector_choices)
+            updated_state = deepcopy(chat_state)
+            updated_state.setdefault("app", {})["selected_vehicle_context"] = context
+            return (
+                context,
+                vehicle_summary(vehicle) + scope_message,
+                registration,
+                selected_state,
+                "select",
+                selected_files,
+                updated_state,
+            )
         except VehicleLookupError as exc:
-            return "", f"**Lookup failed:** {exc}", registration, state
+            return (
+                "",
+                f"**Lookup failed:** {exc}",
+                registration,
+                state,
+                gr.update(),
+                gr.update(),
+                chat_state,
+            )
 
     def get_recommendations(self, first_selector_choices, file_ids):'''
 if chat_source.count(old_recommendations) != 1:

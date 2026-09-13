@@ -18,6 +18,12 @@ from xml.etree import ElementTree
 REGCHECK_ENDPOINT = "https://www.regcheck.org.uk/api/reg.asmx/CheckAustralia"
 OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
 AUSTRALIAN_STATES = ("VIC", "NSW", "QLD", "SA", "WA", "TAS", "ACT", "NT")
+DEMO_MANUAL_PROFILE = {
+    "make": "TOYOTA",
+    "model": "RAV4",
+    "year_from": 2006,
+    "year_to": 2012,
+}
 
 
 class VehicleLookupError(RuntimeError):
@@ -176,6 +182,44 @@ def _text_value(value: Any) -> str:
     if isinstance(value, dict):
         return str(value.get("CurrentTextValue") or value.get("CurrentValue") or "")
     return str(value or "")
+
+
+def vehicle_manual_scope(vehicle: dict[str, Any]) -> tuple[bool, str]:
+    """Return whether the lookup matches the local demo manual corpus."""
+    make = _text_value(vehicle.get("CarMake") or vehicle.get("MakeDescription")).upper()
+    model = _text_value(vehicle.get("CarModel") or vehicle.get("ModelDescription")).upper()
+    raw_year = vehicle.get("RegistrationYear") or vehicle.get("ManufactureYearFrom")
+    try:
+        year = int(str(raw_year)[:4]) if raw_year else None
+    except ValueError:
+        year = None
+
+    profile = DEMO_MANUAL_PROFILE
+    identity_matches = profile["make"] in make and profile["model"] in model
+    year_matches = year is None or profile["year_from"] <= year <= profile["year_to"]
+    label = (
+        f'{profile["make"].title()} {profile["model"]} '
+        f'{profile["year_from"]}-{profile["year_to"]}'
+    )
+    if identity_matches and year_matches:
+        return True, label
+    return False, label
+
+
+def compatible_manual_ids(
+    vehicle: dict[str, Any], choices: list[list[Any] | tuple[Any, Any]] | None
+) -> tuple[list[Any], str]:
+    """Select concrete source IDs only when the vehicle matches this corpus."""
+    matches, label = vehicle_manual_scope(vehicle)
+    if not matches:
+        return [], label
+    return [
+        item[1]
+        for item in (choices or [])
+        if isinstance(item, (list, tuple))
+        and len(item) == 2
+        and not str(item[1]).startswith("[")
+    ], label
 
 
 def vehicle_context(vehicle: dict[str, Any]) -> str:

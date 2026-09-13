@@ -37,11 +37,13 @@ Open <http://127.0.0.1:7860>. The initial Kotaemon login is `admin` / `admin`.
 
 ## Vehicle registration lookup
 
-Use **Rego Lookup** in the new-chat sidebar to enter an Australian registration
-and state, or upload a clear photograph of a registration plate. Plate text is
-read using the configured OpenAI API, then the server calls RegCheck's Australian
-lookup. The selected vehicle's returned make, model, year, engine, transmission,
-fuel and VIN (when supplied) are added to that chat's context.
+Start a fresh conversation and choose **Rego lookup** in the middle of the empty
+chat. Enter an Australian registration and state, or upload a clear photograph
+of a registration plate. Plate text is read using the configured OpenAI API,
+then the server calls RegCheck's Australian lookup. The selected vehicle's
+returned make, model, year, engine, transmission, fuel and VIN (when supplied)
+seed that conversation. Retrieval is restricted to the compatible local manual
+corpus; this demo currently covers the Toyota RAV4 2006-2012.
 
 `REGCHECK_USERNAME` remains server-side and is never sent to the browser. The
 Australian RegCheck response does not guarantee a VIN; when it is absent the UI

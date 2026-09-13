@@ -5,10 +5,12 @@ from unittest.mock import patch
 
 from ai_mechanic.regcheck import (
     VehicleLookupError,
+    compatible_manual_ids,
     extract_plate_from_image,
     lookup_australia,
     normalize_registration,
     vehicle_context,
+    vehicle_manual_scope,
     vehicle_summary,
 )
 
@@ -77,6 +79,48 @@ class RegCheckTests(unittest.TestCase):
             {"RegistrationNumber": "ABC123", "State": "VIC"}
         )
         self.assertIn("VIN was not supplied", summary)
+
+    def test_manual_scope_matches_demo_rav4(self):
+        matched, label = vehicle_manual_scope(
+            {
+                "CarMake": {"CurrentTextValue": "Toyota"},
+                "CarModel": {"CurrentTextValue": "RAV4"},
+                "RegistrationYear": "2012",
+            }
+        )
+        self.assertTrue(matched)
+        self.assertEqual(label, "Toyota RAV4 2006-2012")
+
+    def test_manual_scope_rejects_other_vehicle(self):
+        matched, _ = vehicle_manual_scope(
+            {
+                "CarMake": {"CurrentTextValue": "Mitsubishi"},
+                "CarModel": {"CurrentTextValue": "Lancer"},
+                "RegistrationYear": "2012",
+            }
+        )
+        self.assertFalse(matched)
+
+    def test_compatible_manual_ids_excludes_groups(self):
+        vehicle = {
+            "CarMake": {"CurrentTextValue": "Toyota"},
+            "CarModel": {"CurrentTextValue": "RAV4"},
+            "RegistrationYear": "2012",
+        }
+        ids, _ = compatible_manual_ids(
+            vehicle,
+            [("Manual one", "file-1"), ("group", '["file-1"]')],
+        )
+        self.assertEqual(ids, ["file-1"])
+
+    def test_incompatible_vehicle_has_empty_manual_scope(self):
+        vehicle = {
+            "CarMake": {"CurrentTextValue": "Ford"},
+            "CarModel": {"CurrentTextValue": "Falcon"},
+            "RegistrationYear": "2012",
+        }
+        ids, _ = compatible_manual_ids(vehicle, [("Manual", "file-1")])
+        self.assertEqual(ids, [])
 
     @patch("ai_mechanic.regcheck._request_json")
     def test_extracts_plate_and_state_from_image_response(self, mocked_request):
